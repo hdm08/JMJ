@@ -1,0 +1,32 @@
+{
+  "name": "jmj-os",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Private gemstone catalogue, Google Drive organiser, master-card generator, and WhatsApp sharing app.",
+  "author": "Jay Mataji Jewels",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "node server/index.js",
+    "start": "NODE_ENV=production node server/index.js",
+    "website:dev": "node server/index.js",
+    "website:start": "NODE_ENV=production node server/index.js",
+    "website:hash-admin": "node server/hash-password.js",
+    "hash-admin": "node server/hash-password.js",
+    "migrate:firestore": "node server/migrate-json-to-firestore.js",
+    "check": "node --check server/config.js && node --check server/index.js && node --check server/drive.js && node --check server/certificate-parser.js && node --check server/migrate-json-to-firestore.js",
+    "lint": "npm run check"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^9.0.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2",
+    "file-type": "^22.0.1",
+    "helmet": "^8.3.0",
+    "jspdf": "^4.2.1",
+    "multer": "^2.2.0",
+    "pdfjs-dist": "^6.2.108",
+    "tesseract.js": "^7.0.0"
+  }
+}

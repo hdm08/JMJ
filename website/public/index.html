@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JMJ OS Secure Catalogue</title>
+    <link rel="stylesheet" href="/assets/app.css?v=transcript-v1" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section id="login-view" class="auth-view hidden">
+        <div class="brand-lockup">
+          <div class="brand-mark">JMJ</div>
+          <h1>JMJ OS</h1>
+          <p>Secure website catalogue</p>
+        </div>
+        <form id="login-form" class="auth-panel">
+          <label>
+            <span>Email</span>
+            <input name="username" type="email" autocomplete="email" required />
+          </label>
+          <label>
+            <span>Password</span>
+            <input name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit" class="primary-button">Sign In</button>
+          <p id="login-message" class="status-text" role="status"></p>
+        </form>
+      </section>
+
+      <section id="app-view" class="hidden">
+        <header class="topbar">
+          <button id="brand-home" type="button" class="brand-button" aria-label="Go home">
+            <span class="brand-mark small">JMJ</span>
+            <span>
+              <strong>JMJ OS</strong>
+              <small>Jay Mataji Jewels</small>
+            </span>
+          </button>
+          <div class="topbar-actions">
+            <span id="drive-status" class="status-pill">Drive checking</span>
+            <button id="open-settings" type="button" class="secondary-button">Settings</button>
+            <button id="connect-drive" type="button" class="secondary-button">Connect Drive</button>
+            <button id="refresh-products" type="button" class="secondary-button">Sync Catalogue</button>
+            <button id="logout" type="button" class="ghost-button">Logout</button>
+          </div>
+        </header>
+
+        <p id="top-message" class="top-message" role="status"></p>
+
+        <section id="home-screen" class="screen home-screen">
+          <div class="home-lockup">
+            <h1>JMJ OS</h1>
+            <div class="ornament" aria-hidden="true"></div>
+          </div>
+          <div class="home-actions">
+            <button id="home-search" type="button" class="home-action">
+              <span class="action-icon">Q</span>
+              <strong>Search</strong>
+              <small>Products</small>
+            </button>
+            <button id="home-add" type="button" class="home-action">
+              <span class="action-icon">+</span>
+              <strong>Add</strong>
+              <small>New Product</small>
+            </button>
+          </div>
+        </section>
+
+        <section id="add-screen" class="screen hidden">
+          <div class="screen-header">
+            <button type="button" class="icon-button js-home">&lt;</button>
+            <h1>Add Product</h1>
+            <span id="upload-limit" class="muted"></span>
+          </div>
+
+          <div id="step-tabs" class="step-tabs" aria-label="Add product steps">
+            <button type="button" data-step="0" class="active">1. Media</button>
+            <button type="button" data-step="1">2. Product</button>
+            <button type="button" data-step="2">3. Certification</button>
+            <button type="button" data-step="3">4. Internal</button>
+            <button type="button" data-step="4">5. Preview</button>
+          </div>
+
+          <div id="add-step-media" class="add-step">
+            <div class="media-picker-grid">
+              <label class="media-drop">
+                <span class="drop-icon">M</span>
+                <strong>Main Photo</strong>
+                <small>Select hero image</small>
+                <input id="hero-photo" type="file" accept=".jpg,.jpeg,.png,.heic,.heif,.webp,image/jpeg,image/png,image/heic,image/heif,image/webp" />
+              </label>
+              <label class="media-drop">
+                <span class="drop-icon">P</span>
+                <strong>Other Photos</strong>
+                <small>Select all extra images</small>
+                <input id="supporting-photos" type="file" accept=".jpg,.jpeg,.png,.heic,.heif,.webp,image/jpeg,image/png,image/heic,image/heif,image/webp" multiple />
+              </label>
+              <label class="media-drop">
+                <span class="drop-icon">V</span>
+                <strong>Videos</strong>
+                <small>First video becomes main</small>
+                <input id="product-videos" type="file" accept=".mp4,.mov,video/mp4,video/quicktime" multiple />
+              </label>
+              <label class="media-drop">
+                <span class="drop-icon">C</span>
+                <strong>Certificate</strong>
+                <small>PDF or image for autofill</small>
+                <input id="certificate-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" />
+              </label>
+            </div>
+            <div class="form-toolbar media-autofill-toolbar">
+              <button id="autofill-certificate-media" type="button" class="secondary-button">Autofill From Certificate</button>
+              <span id="parse-status-media" class="muted-status"></span>
+            </div>
+            <div id="media-list" class="media-list"></div>
+          </div>
+
+          <div id="add-step-details" class="add-step hidden">
+            <div class="form-toolbar">
+              <button id="autofill-certificate" type="button" class="secondary-button">Autofill From Certificate</button>
+              <span id="parse-status" class="muted-status"></span>
+            </div>
+            <div class="field-grid">
+              <label><span>Category</span><select data-detail="category"><option>Astrological</option><option>Vastu</option></select></label>
+              <label><span>Gemstone</span><input data-detail="gemstone" list="gemstones" required /></label>
+              <label><span>SKU</span><input data-detail="sku" required /></label>
+              <label><span>Variety</span><input data-detail="variety" /></label>
+              <label><span>Origin</span><input data-detail="origin" list="origins" /></label>
+              <label><span>Weight (ct)</span><input data-detail="weightCt" inputmode="decimal" /></label>
+              <label><span>Price / Carat</span><input data-detail="pricePerCarat" inputmode="numeric" /></label>
+              <label><span>Shape</span><input data-detail="shape" list="shapes" /></label>
+              <label><span>Cut</span><input data-detail="cut" /></label>
+              <label><span>Dimensions</span><input data-detail="dimensions" /></label>
+              <label><span>Treatment</span><input data-detail="treatment" list="treatments" /></label>
+              <label><span>Color</span><input data-detail="color" /></label>
+              <label><span>Clarity</span><input data-detail="clarity" /></label>
+            </div>
+          </div>
+
+          <div id="add-step-certification" class="add-step hidden">
+            <div class="field-grid">
+              <label><span>Certification</span><select id="certification-select"><option>Non-Certified</option><option>GSI</option><option>IIGJ</option><option>Other</option></select></label>
+              <label id="other-lab-block" class="hidden"><span>Other Lab</span><input id="other-lab-input" /></label>
+              <label id="report-no-block" class="hidden"><span>Report No.</span><input data-detail="certificateNo" /></label>
+              <label id="certificate-file-block" class="media-drop wide hidden">
+                <span class="drop-icon">C</span>
+                <strong>Certificate</strong>
+                <small>PDF or image for autofill</small>
+                <input id="certificate-file-cert" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" />
+              </label>
+            </div>
+            <div id="certificate-text-preview" class="raw-certificate hidden">
+              <strong>Certificate Text</strong>
+              <p></p>
+            </div>
+          </div>
+
+          <div id="add-step-internal" class="add-step hidden">
+            <div class="field-grid single">
+              <label><span>Customer Notes</span><textarea data-detail="notes" rows="5"></textarea></label>
+              <label><span>Internal Notes</span><textarea data-detail="internalNotes" rows="5"></textarea></label>
+            </div>
+          </div>
+
+          <div id="add-step-preview" class="add-step hidden">
+            <div class="preview-layout">
+              <div id="master-card-preview" class="master-card-preview"></div>
+              <div class="confirm-panel">
+                <h2>Confirm & Save</h2>
+                <dl>
+                  <div><dt>Google Drive folder</dt><dd id="preview-folder"></dd></div>
+                  <div><dt>Files</dt><dd id="preview-files"></dd></div>
+                  <div><dt>Total price</dt><dd id="preview-total"></dd></div>
+                </dl>
+                <button id="save-product" type="button" class="primary-button">Confirm & Save</button>
+                <p id="form-message" class="status-text" role="status"></p>
+              </div>
+            </div>
+          </div>
+
+          <div class="screen-actions">
+            <button id="previous-step" type="button" class="secondary-button">Back</button>
+            <button id="next-step" type="button" class="primary-button">Next</button>
+          </div>
+        </section>
+
+        <section id="search-screen" class="screen hidden">
+          <div class="screen-header">
+            <button type="button" class="icon-button js-home">&lt;</button>
+            <h1>Search Products</h1>
+            <button id="toggle-filters" type="button" class="secondary-button compact">Filters</button>
+          </div>
+
+          <div id="filters-panel" class="filter-panel">
+            <label><span>Search</span><input data-filter="query" /></label>
+            <label><span>Gemstone</span><input data-filter="gemstone" list="gemstones" /></label>
+            <label><span>Origin</span><input data-filter="origin" list="origins" /></label>
+            <label><span>Shape</span><input data-filter="shape" list="shapes" /></label>
+            <label><span>Treatment</span><input data-filter="treatment" list="treatments" /></label>
+            <label><span>Lab</span><input data-filter="lab" list="labs" /></label>
+            <label><span>Weight From</span><input data-filter="minWeight" inputmode="decimal" /></label>
+            <label><span>Weight To</span><input data-filter="maxWeight" inputmode="decimal" /></label>
+            <label><span>Price From</span><input data-filter="minPrice" inputmode="numeric" /></label>
+            <label><span>Price To</span><input data-filter="maxPrice" inputmode="numeric" /></label>
+          </div>
+
+          <div class="catalogue-header">
+            <strong id="product-count">0 Products Found</strong>
+            <button id="clear-selection" type="button" class="text-button hidden">Clear All</button>
+          </div>
+          <div id="product-grid" class="product-grid"></div>
+          <div id="selection-bar" class="selection-bar hidden">
+            <div>
+              <strong id="selection-count">0 Products Selected</strong>
+              <span id="selection-weight">Total Weight: 0.00 ct</span>
+            </div>
+            <button id="share-selected" type="button" class="gold-button">Share</button>
+          </div>
+        </section>
+
+        <section id="settings-screen" class="screen hidden">
+          <div class="screen-header">
+            <button type="button" class="icon-button js-home">&lt;</button>
+            <h1>Settings</h1>
+            <span></span>
+          </div>
+
+          <div class="settings-grid">
+            <section class="settings-panel">
+              <h2>Business</h2>
+              <div class="field-grid single">
+                <label><span>Business Name</span><input id="setting-business-name" /></label>
+                <label><span>Currency Code</span><input id="setting-currency" maxlength="3" /></label>
+                <label><span>Drive Root Folder</span><input id="setting-drive-root" /></label>
+              </div>
+              <label class="toggle-row">
+                <input id="setting-share-links" type="checkbox" />
+                <span>Create shareable Drive links for WhatsApp</span>
+              </label>
+              <button id="save-settings" type="button" class="primary-button">Save Settings</button>
+            </section>
+
+            <section class="settings-panel">
+              <h2>Google Drive</h2>
+              <div class="field-grid single">
+                <label><span>Google OAuth Web Client ID</span><input id="setting-google-client-id" autocomplete="off" /></label>
+                <label><span>Google OAuth Client Secret</span><input id="setting-google-client-secret" type="password" autocomplete="new-password" /></label>
+                <label><span>Redirect URI</span><input id="setting-google-redirect-uri" /></label>
+              </div>
+              <p id="secret-status" class="setup-note"></p>
+              <p class="setup-note">Website OAuth uses a Web application client. Add this redirect URI in Google Cloud before connecting Drive.</p>
+              <button id="settings-connect-drive" type="button" class="primary-button">Save & Connect Drive</button>
+              <button id="settings-sync-products" type="button" class="secondary-button">Sync Catalogue</button>
+              <p id="settings-message" class="status-text" role="status"></p>
+            </section>
+
+            <section class="settings-panel">
+              <h2>Account</h2>
+              <div class="field-grid single">
+                <label><span>Current Password</span><input id="setting-current-password" type="password" autocomplete="current-password" /></label>
+                <label><span>New Password</span><input id="setting-new-password" type="password" autocomplete="new-password" /></label>
+                <label><span>Confirm New Password</span><input id="setting-confirm-password" type="password" autocomplete="new-password" /></label>
+              </div>
+              <p class="setup-note">Password changes update your Firebase Authentication account.</p>
+              <button id="change-password" type="button" class="secondary-button">Change Password</button>
+              <p id="password-message" class="status-text" role="status"></p>
+            </section>
+          </div>
+        </section>
+      </section>
+
+      <div id="product-detail-modal" class="modal-backdrop hidden"></div>
+      <div id="upload-modal" class="modal-backdrop hidden"></div>
+    </main>
+
+    <datalist id="gemstones">
+      <option value="Yellow Sapphire"></option>
+      <option value="Blue Sapphire"></option>
+      <option value="Emerald"></option>
+      <option value="Ruby"></option>
+      <option value="Pink Sapphire"></option>
+      <option value="White Sapphire"></option>
+      <option value="Padparadscha Sapphire"></option>
+      <option value="Alexandrite"></option>
+      <option value="Spinel"></option>
+      <option value="Tourmaline"></option>
+      <option value="Tanzanite"></option>
+      <option value="Aquamarine"></option>
+    </datalist>
+    <datalist id="origins">
+      <option value="Colombian"></option>
+      <option value="Colombian Muzo"></option>
+      <option value="Colombian Chivor"></option>
+      <option value="Ceylon"></option>
+      <option value="Sri Lankan"></option>
+      <option value="Burma"></option>
+      <option value="Mozambique"></option>
+      <option value="Zambia"></option>
+      <option value="Thailand"></option>
+      <option value="Kashmir"></option>
+      <option value="Madagascar"></option>
+    </datalist>
+    <datalist id="shapes">
+      <option value="Cushion"></option>
+      <option value="Cushion Modified"></option>
+      <option value="Cushion Brilliant"></option>
+      <option value="Oval"></option>
+      <option value="Round"></option>
+      <option value="Pear"></option>
+      <option value="Emerald Cut"></option>
+      <option value="Octagon"></option>
+      <option value="Princess"></option>
+      <option value="Trillion"></option>
+      <option value="Cabochon"></option>
+    </datalist>
+    <datalist id="treatments">
+      <option value="No Treatment"></option>
+      <option value="No Indications of Heating"></option>
+      <option value="Heated"></option>
+      <option value="Minor Oil"></option>
+      <option value="Moderate Oil"></option>
+      <option value="F1"></option>
+      <option value="F2"></option>
+    </datalist>
+    <datalist id="categories">
+      <option value="Astrological"></option>
+      <option value="Vastu"></option>
+    </datalist>
+    <datalist id="labs">
+      <option value="Non-Certified"></option>
+      <option value="GSI"></option>
+      <option value="IIGJ"></option>
+      <option value="Other"></option>
+    </datalist>
+
+    <script src="/assets/app.js?v=transcript-v1" type="module"></script>
+  </body>
+</html>
