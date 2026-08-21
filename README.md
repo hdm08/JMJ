@@ -71,8 +71,19 @@ GOOGLE_REDIRECT_URI=http://localhost:8787/api/google/callback
 
 For production login, create a Firebase project, enable Authentication email/password, add your user, then set `FIREBASE_API_KEY` and `FIREBASE_ALLOWED_EMAILS` in `.env`. The local admin password hash is only a fallback for development/private testing.
 
-For production, set strong `SESSION_SECRET` and `APP_ENCRYPTION_KEY` values, use Firebase login, and keep `.env` plus `.data/website/store.json` private.
+For production, set strong `SESSION_SECRET` and `APP_ENCRYPTION_KEY` values, use Firebase login, and set `STORE_DRIVER=firestore` so Cloud Run stores app state in Firestore instead of a local file.
 
-## Local Data
+## App State
 
-Website data, sessions, encrypted Google OAuth settings, and encrypted Drive tokens are stored in `.data/website/store.json`. Google Drive is the master file store once connected.
+By default, local development stores website data, sessions, encrypted Google OAuth settings, and encrypted Drive tokens in `.data/website/store.json`.
+
+For Cloud Run, use Firestore:
+
+```text
+STORE_DRIVER=firestore
+FIRESTORE_PROJECT_ID=your-google-project-id
+FIRESTORE_COLLECTION=jmj_os
+FIRESTORE_DOCUMENT=state
+```
+
+Google Drive remains the master file store once connected.
