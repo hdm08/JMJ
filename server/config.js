@@ -14,6 +14,7 @@ export const config = {
   firestoreProjectId: process.env.FIRESTORE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || '',
   firestoreCollection: process.env.FIRESTORE_COLLECTION || 'jmj_os',
   firestoreDocument: process.env.FIRESTORE_DOCUMENT || 'state',
+  firestoreServiceAccountJson: process.env.FIRESTORE_SERVICE_ACCOUNT_JSON || '',
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT || 8787),
   publicBaseUrl: process.env.PUBLIC_BASE_URL || 'http://localhost:8787',

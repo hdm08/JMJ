@@ -141,6 +141,7 @@ export class FirestoreStore {
   constructor() {
     this.db = new Firestore({
       ...(config.firestoreProjectId ? { projectId: config.firestoreProjectId } : {}),
+      ...firestoreCredentials(),
       ignoreUndefinedProperties: true,
     })
     this.root = this.db.collection(config.firestoreCollection).doc(config.firestoreDocument)
@@ -262,6 +263,23 @@ export class FirestoreStore {
       this.db,
       snapshot.docs.map((doc) => ({ type: 'delete', ref: doc.ref })),
     )
+  }
+}
+
+function firestoreCredentials() {
+  if (!config.firestoreServiceAccountJson) return {}
+
+  try {
+    const credentials = JSON.parse(config.firestoreServiceAccountJson)
+    return {
+      projectId: config.firestoreProjectId || credentials.project_id,
+      credentials: {
+        client_email: credentials.client_email,
+        private_key: credentials.private_key,
+      },
+    }
+  } catch {
+    throw new Error('FIRESTORE_SERVICE_ACCOUNT_JSON must be valid Google service account JSON.')
   }
 }
 
