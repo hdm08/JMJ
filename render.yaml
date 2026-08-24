@@ -27,6 +27,16 @@ services:
         value: "250"
       - key: FIREBASE_PROJECT_ID
         value: jmj-gem
+      - key: FIREBASE_AUTH_DOMAIN
+        value: jmj-gem.firebaseapp.com
+      - key: FIREBASE_STORAGE_BUCKET
+        value: jmj-gem.firebasestorage.app
+      - key: FIREBASE_MESSAGING_SENDER_ID
+        value: "239292970128"
+      - key: FIREBASE_APP_ID
+        value: 1:239292970128:web:a39877bbf87b92d0af1415
+      - key: FIREBASE_MEASUREMENT_ID
+        value: G-E1HS0N0BJY
       - key: PUBLIC_BASE_URL
         sync: false
       - key: GOOGLE_REDIRECT_URI
