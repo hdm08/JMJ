@@ -3,6 +3,7 @@ node_modules
 .env
 .env.*
 !.env.example
+cloudrun.env.yaml
 .git
 .gitignore
 .DS_Store

@@ -15,7 +15,8 @@ tmp
 .data
 .env
 .env.*
-.env.example
+!.env.example
+cloudrun.env.yaml
 *.local
 
 # Editor directories and files
