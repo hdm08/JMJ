@@ -1,10 +1,12 @@
 import { config } from './config.js'
-import { decryptJson, encryptJson } from './crypto-box.js'
+import { readCookieJson, writeCookieJson } from './cookie-state.js'
 
+const SETTINGS_COOKIE = 'jmj_settings'
+const SETTINGS_TTL_MS = 180 * 24 * 60 * 60 * 1000
 const DEFAULT_SHARE_LINKS = true
 
-export async function getWebsiteSettings(store) {
-  const saved = await store.getWebsiteSettings()
+export async function getWebsiteSettings(req) {
+  const saved = savedSettings(req)
   return {
     businessName: clean(saved.businessName) || config.businessName,
     currency: clean(saved.currency).toUpperCase() || config.currency,
@@ -13,18 +15,17 @@ export async function getWebsiteSettings(store) {
   }
 }
 
-export async function getGoogleOAuthConfig(store) {
-  const saved = decryptJson(await store.getGoogleOAuthConfig()) || {}
+export async function getGoogleOAuthConfig(req) {
   return {
-    clientId: clean(saved.clientId) || config.googleClientId,
-    clientSecret: clean(saved.clientSecret, 1000) || config.googleClientSecret,
-    redirectUri: clean(saved.redirectUri, 500) || config.googleRedirectUri,
+    clientId: config.googleClientId,
+    clientSecret: config.googleClientSecret,
+    redirectUri: config.googleRedirectUri,
   }
 }
 
-export async function getPublicSettings(store) {
-  const settings = await getWebsiteSettings(store)
-  const oauth = await getGoogleOAuthConfig(store)
+export async function getPublicSettings(req) {
+  const settings = await getWebsiteSettings(req)
+  const oauth = await getGoogleOAuthConfig(req)
   return {
     ...settings,
     googleClientId: oauth.clientId,
@@ -33,40 +34,35 @@ export async function getPublicSettings(store) {
   }
 }
 
-export async function savePublicSettings(store, body) {
-  const settings = await store.saveWebsiteSettings({
+export async function savePublicSettings(req, res, body) {
+  const current = savedSettings(req)
+  const next = {
+    ...current,
     businessName: clean(body.businessName) || config.businessName,
     currency: clean(body.currency).toUpperCase() || config.currency,
     driveRootFolderName: clean(body.driveRootFolderName) || config.driveRootFolderName,
     shareDriveLinksPublic: body.shareDriveLinksPublic === true || body.shareDriveLinksPublic === 'true',
-  })
-
-  if (Object.hasOwn(body, 'googleClientId') || Object.hasOwn(body, 'googleClientSecret') || Object.hasOwn(body, 'googleRedirectUri')) {
-    const current = await getGoogleOAuthConfig(store)
-    const next = {
-      clientId: clean(body.googleClientId) || current.clientId,
-      clientSecret: clean(body.googleClientSecret, 1000) || current.clientSecret,
-      redirectUri: clean(body.googleRedirectUri, 500) || current.redirectUri,
-    }
-    await store.setGoogleOAuthConfig(encryptJson(next))
   }
 
-  return {
-    ...settings,
-    ...(await getPublicSettings(store)),
-  }
+  req.jmjSettings = next
+  writeCookieJson(res, SETTINGS_COOKIE, next, SETTINGS_TTL_MS)
+  return getPublicSettings(req)
 }
 
-export async function resolvedDriveRootFolderName(store) {
-  return (await getWebsiteSettings(store)).driveRootFolderName
+export async function resolvedDriveRootFolderName(req) {
+  return (await getWebsiteSettings(req)).driveRootFolderName
 }
 
-export async function resolvedBusinessName(store) {
-  return (await getWebsiteSettings(store)).businessName
+export async function resolvedBusinessName(req) {
+  return (await getWebsiteSettings(req)).businessName
 }
 
-export async function resolvedShareDriveLinksPublic(store) {
-  return (await getWebsiteSettings(store)).shareDriveLinksPublic
+export async function resolvedShareDriveLinksPublic(req) {
+  return (await getWebsiteSettings(req)).shareDriveLinksPublic
+}
+
+function savedSettings(req) {
+  return req.jmjSettings || readCookieJson(req, SETTINGS_COOKIE) || {}
 }
 
 function clean(value, max = 160) {

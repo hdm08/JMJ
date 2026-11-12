@@ -69,21 +69,16 @@ GOOGLE_CLIENT_SECRET=your-web-oauth-client-secret
 GOOGLE_REDIRECT_URI=http://localhost:8787/api/google/callback
 ```
 
+Google Drive OAuth credentials are configured on the server in `.env`. The Settings screen only provides the **Connect Drive** and **Sync Catalogue** actions.
+
 For production login, create a Firebase project, enable Authentication email/password, add your user, then set `FIREBASE_API_KEY` and `FIREBASE_ALLOWED_EMAILS` in `.env`. The local admin password hash is only a fallback for development/private testing.
 
-For production, set strong `SESSION_SECRET` and `APP_ENCRYPTION_KEY` values, use Firebase login, and set `STORE_DRIVER=firestore` so Cloud Run stores app state in Firestore instead of a local file.
+For production, set strong `SESSION_SECRET` and `APP_ENCRYPTION_KEY` values, use Firebase login, and set the Google OAuth values as environment variables on your hosting provider.
 
-## App State
+## Storage
 
-By default, local development stores website data, sessions, encrypted Google OAuth settings, and encrypted Drive tokens in `.data/website/store.json`.
+The deployed web server is stateless. It does not need `.data/store.json`, `.data/website/store.json`, or Firestore.
 
-For Cloud Run, use Firestore:
+Google Drive is the master file store once connected. Product media, certificate files, generated master cards, `catalogue_index.json`, and `price_sheet.csv` are saved inside the configured Drive root folder.
 
-```text
-STORE_DRIVER=firestore
-FIRESTORE_PROJECT_ID=your-google-project-id
-FIRESTORE_COLLECTION=jmj_os
-FIRESTORE_DOCUMENT=state
-```
-
-Google Drive remains the master file store once connected.
+Login/session state, Google Drive tokens, and optional Settings overrides are kept in encrypted HttpOnly browser cookies, not in server files.

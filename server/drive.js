@@ -1,28 +1,40 @@
 import { randomBytes } from 'node:crypto'
 import { jsPDF } from 'jspdf'
-import { decryptJson, encryptJson } from './crypto-box.js'
+import { clearStateCookie, readCookieJson, writeCookieJson } from './cookie-state.js'
 import { getGoogleOAuthConfig, resolvedBusinessName, resolvedDriveRootFolderName, resolvedShareDriveLinksPublic } from './settings.js'
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 const DRIVE_API = 'https://www.googleapis.com/drive/v3'
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3'
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
+const TOKEN_COOKIE = 'jmj_google_tokens'
+const OAUTH_STATE_COOKIE = 'jmj_google_oauth_state'
+const TOKEN_TTL_MS = 180 * 24 * 60 * 60 * 1000
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000
+const CATALOGUE_INDEX_NAME = 'catalogue_index.json'
+const PRICE_SHEET_NAME = 'price_sheet.csv'
 
-export async function driveConfigured(store) {
-  const oauth = await getGoogleOAuthConfig(store)
+export async function driveConfigured(req) {
+  const oauth = await getGoogleOAuthConfig(req)
   return Boolean(oauth.clientId && oauth.clientSecret && oauth.redirectUri)
 }
 
-export async function createGoogleAuthUrl(store, sessionHash) {
-  const oauth = await getGoogleOAuthConfig(store)
+export async function createGoogleAuthUrl(req, res, session) {
+  const oauth = await getGoogleOAuthConfig(req)
   if (!oauth.clientId || !oauth.clientSecret || !oauth.redirectUri) throw new Error('Google OAuth server credentials are not configured.')
+
   const stateValue = randomBytes(32).toString('base64url')
-  await store.saveOauthState({
-    value: stateValue,
-    sessionHash,
-    createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-  })
+  writeCookieJson(
+    res,
+    OAUTH_STATE_COOKIE,
+    {
+      value: stateValue,
+      userKey: sessionUserKey(session),
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + OAUTH_STATE_TTL_MS).toISOString(),
+    },
+    OAUTH_STATE_TTL_MS,
+  )
 
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth')
   url.search = new URLSearchParams({
@@ -38,11 +50,18 @@ export async function createGoogleAuthUrl(store, sessionHash) {
   return url.toString()
 }
 
-export async function handleGoogleCallback(store, { code, state }, sessionHash) {
-  const oauth = await getGoogleOAuthConfig(store)
+export async function handleGoogleCallback(req, res, { code, state }, session) {
+  const oauth = await getGoogleOAuthConfig(req)
   if (!code || !state) throw new Error('Google callback is missing code/state.')
-  const savedState = await store.consumeOauthState(state)
-  if (!savedState || savedState.sessionHash !== sessionHash) throw new Error('Google OAuth state check failed.')
+
+  const savedState = readCookieJson(req, OAUTH_STATE_COOKIE)
+  clearStateCookie(res, OAUTH_STATE_COOKIE)
+  if (!savedState || savedState.value !== state || Date.parse(savedState.expiresAt) < Date.now()) {
+    throw new Error('Google OAuth state check failed.')
+  }
+  if (savedState.userKey && savedState.userKey !== sessionUserKey(session)) {
+    throw new Error('Google OAuth session check failed.')
+  }
 
   const token = await tokenRequest({
     code,
@@ -52,33 +71,52 @@ export async function handleGoogleCallback(store, { code, state }, sessionHash) 
     grant_type: 'authorization_code',
   })
 
-  await store.setGoogleTokens(
-    encryptJson({
-      ...token,
-      expires_at: Date.now() + Math.max(1, (token.expires_in || 3600) - 300) * 1000,
-    }),
-  )
+  writeDriveTokens(req, res, {
+    ...token,
+    expires_at: Date.now() + Math.max(1, (token.expires_in || 3600) - 300) * 1000,
+  })
 }
 
-export async function googleDriveStatus(store) {
-  const token = decryptJson(await store.getGoogleTokens())
-  const oauth = await getGoogleOAuthConfig(store)
+export async function googleDriveStatus(req) {
+  const token = readDriveTokens(req)
+  const oauth = await getGoogleOAuthConfig(req)
   return {
     configured: Boolean(oauth.clientId && oauth.clientSecret && oauth.redirectUri),
     connected: Boolean(token?.refresh_token || token?.access_token),
-    rootFolderName: await resolvedDriveRootFolderName(store),
+    rootFolderName: await resolvedDriveRootFolderName(req),
   }
 }
 
-export async function downloadDriveFile(store, fileId) {
-  const client = await driveClient(store)
+export async function readCatalogueProducts(req, res) {
+  const client = await driveClient(req, res)
+  const root = await client.ensureFolder(await resolvedDriveRootFolderName(req))
+  const indexFile = await client.findFileByName(CATALOGUE_INDEX_NAME, root.id)
+  if (!indexFile) return []
+
+  const file = await client.downloadFile(indexFile.id)
+  const raw = file.buffer.toString('utf8').trim()
+  if (!raw) return []
+
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('Google Drive catalogue_index.json is not valid JSON.')
+  }
+
+  const products = Array.isArray(parsed.products) ? parsed.products : []
+  return sortProducts(products)
+}
+
+export async function downloadDriveFile(req, res, fileId) {
+  const client = await driveClient(req, res)
   return client.downloadFile(fileId)
 }
 
-export async function uploadProductToDrive(store, product, files) {
-  const client = await driveClient(store)
-  const rootFolderName = await resolvedDriveRootFolderName(store)
-  const shareDriveLinksPublic = await resolvedShareDriveLinksPublic(store)
+export async function uploadProductToDrive(req, res, product, files) {
+  const client = await driveClient(req, res)
+  const rootFolderName = await resolvedDriveRootFolderName(req)
+  const shareDriveLinksPublic = await resolvedShareDriveLinksPublic(req)
   const root = await client.ensureFolder(rootFolderName)
   const category = await client.ensureFolder(safeDriveName(product.category || 'Astrological'), root.id)
   const gem = await client.ensureFolder(safeDriveName(product.gemstone || 'Unsorted Gemstones'), category.id)
@@ -118,7 +156,7 @@ export async function uploadProductToDrive(store, product, files) {
   const masterCardName = `${product.sku}_Master_Card.pdf`
   const masterCard = await client.uploadBuffer({
     name: masterCardName,
-    buffer: await createMasterCardPdfBuffer(store, product, files),
+    buffer: await createMasterCardPdfBuffer(req, product, files),
     mimeType: 'application/pdf',
     parentId: information.id,
   })
@@ -148,15 +186,16 @@ export async function uploadProductToDrive(store, product, files) {
   }
 }
 
-export async function syncCatalogueFiles(store, products) {
-  const client = await driveClient(store)
-  const root = await client.ensureFolder(await resolvedDriveRootFolderName(store))
-  await client.upsertText('catalogue_index.json', JSON.stringify({ exportedAt: new Date().toISOString(), products }, null, 2), 'application/json', root.id)
-  await client.upsertText('price_sheet.csv', priceSheet(products), 'text/csv', root.id)
+export async function syncCatalogueFiles(req, res, products) {
+  const client = await driveClient(req, res)
+  const sortedProducts = sortProducts(products)
+  const root = await client.ensureFolder(await resolvedDriveRootFolderName(req))
+  await client.upsertText(CATALOGUE_INDEX_NAME, JSON.stringify({ exportedAt: new Date().toISOString(), products: sortedProducts }, null, 2), 'application/json', root.id)
+  await client.upsertText(PRICE_SHEET_NAME, priceSheet(sortedProducts), 'text/csv', root.id)
 }
 
-export async function reconcileProductsWithDrive(store, products) {
-  const client = await driveClient(store)
+export async function reconcileProductsWithDrive(req, res, products) {
+  const client = await driveClient(req, res)
   const kept = []
   const removed = []
 
@@ -170,16 +209,15 @@ export async function reconcileProductsWithDrive(store, products) {
     }
   }
 
-  return { products: kept, removed }
+  return { products: sortProducts(kept), removed }
 }
 
-async function driveClient(store) {
-  const encrypted = await store.getGoogleTokens()
-  const token = decryptJson(encrypted)
+async function driveClient(req, res) {
+  const token = readDriveTokens(req)
   if (!token) throw new Error('Google Drive is not connected.')
 
   if (!token.access_token || Date.now() >= token.expires_at) {
-    const oauth = await getGoogleOAuthConfig(store)
+    const oauth = await getGoogleOAuthConfig(req)
     if (!token.refresh_token) throw new Error('Google Drive token expired. Reconnect Drive.')
     const refreshed = await tokenRequest({
       client_id: oauth.clientId,
@@ -193,7 +231,7 @@ async function driveClient(store) {
       refresh_token: refreshed.refresh_token || token.refresh_token,
       expires_at: Date.now() + Math.max(1, (refreshed.expires_in || 3600) - 300) * 1000,
     }
-    await store.setGoogleTokens(encryptJson(nextToken))
+    writeDriveTokens(req, res, nextToken)
     return new DriveClient(nextToken.access_token)
   }
 
@@ -316,6 +354,27 @@ async function tokenRequest(params) {
   return body
 }
 
+function readDriveTokens(req) {
+  return req.jmjGoogleTokens || readCookieJson(req, TOKEN_COOKIE)
+}
+
+function writeDriveTokens(req, res, token) {
+  req.jmjGoogleTokens = token
+  writeCookieJson(res, TOKEN_COOKIE, token, TOKEN_TTL_MS)
+}
+
+function sessionUserKey(session) {
+  return session?.user?.email || session?.user?.username || ''
+}
+
+function sortProducts(products) {
+  return [...products].sort((a, b) => {
+    const dateCompare = String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+    if (dateCompare) return dateCompare
+    return String(a.sku || '').localeCompare(String(b.sku || ''))
+  })
+}
+
 function safeDriveName(value) {
   return String(value || '').trim().replace(/[\\/:*?"<>|#%{}^~[\]`]+/g, '-').replace(/\s+/g, ' ') || 'Untitled'
 }
@@ -331,8 +390,8 @@ function escapeDriveQuery(value) {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 }
 
-export async function createMasterCardPdfBuffer(store, product, files = []) {
-  const businessName = await resolvedBusinessName(store)
+export async function createMasterCardPdfBuffer(req, product, files = []) {
+  const businessName = await resolvedBusinessName(req)
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   doc.setFillColor('#fff7e8')
   doc.rect(0, 0, 210, 297, 'F')

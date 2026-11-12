@@ -11,14 +11,6 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: STORE_DRIVER
-        value: firestore
-      - key: FIRESTORE_PROJECT_ID
-        value: jmj-gem
-      - key: FIRESTORE_COLLECTION
-        value: jmj_os
-      - key: FIRESTORE_DOCUMENT
-        value: state
       - key: BUSINESS_NAME
         value: Jay Mataji Jewels
       - key: DRIVE_ROOT_FOLDER_NAME
@@ -48,8 +40,6 @@ services:
       - key: FIREBASE_API_KEY
         sync: false
       - key: FIREBASE_ALLOWED_EMAILS
-        sync: false
-      - key: FIRESTORE_SERVICE_ACCOUNT_JSON
         sync: false
       - key: SESSION_SECRET
         sync: false

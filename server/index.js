@@ -6,10 +6,9 @@ import multer from 'multer'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { config, assertProductionConfig } from './config.js'
-import { createStore } from './store.js'
 import { parseCertificateFile } from './certificate-parser.js'
 import { authenticatedSession, clearSessionCookie, newSession, requireAuth, requireCsrf, setSessionCookie, verifyPassword } from './security.js'
-import { createGoogleAuthUrl, downloadDriveFile, googleDriveStatus, handleGoogleCallback, reconcileProductsWithDrive, syncCatalogueFiles, uploadProductToDrive } from './drive.js'
+import { createGoogleAuthUrl, downloadDriveFile, googleDriveStatus, handleGoogleCallback, readCatalogueProducts, reconcileProductsWithDrive, syncCatalogueFiles, uploadProductToDrive } from './drive.js'
 import { changeFirebasePassword, firebaseAuthConfigured, verifyFirebasePassword } from './firebase-auth.js'
 import { getPublicSettings, resolvedBusinessName, savePublicSettings } from './settings.js'
 import { mediaKind, multerLimits, uploadFields, validateUploadedFile } from './upload-policy.js'
@@ -17,13 +16,10 @@ import { mediaKind, multerLimits, uploadFields, validateUploadedFile } from './u
 assertProductionConfig()
 
 const app = express()
-const store = createStore()
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: multerLimits(),
 })
-
-await store.init()
 
 app.disable('x-powered-by')
 app.set('trust proxy', config.nodeEnv === 'production' ? 1 : false)
@@ -82,9 +78,9 @@ const apiLimiter = rateLimit({
 app.use('/api', apiLimiter)
 
 app.get('/api/session', async (req, res) => {
-  const session = await authenticatedSession(req, store)
-  const drive = session ? await googleDriveStatus(store) : { configured: false, connected: false }
-  const settings = session ? await getPublicSettings(store) : { businessName: config.businessName, currency: config.currency, driveRootFolderName: config.driveRootFolderName }
+  const session = await authenticatedSession(req)
+  const drive = session ? await googleDriveStatus(req) : { configured: false, connected: false }
+  const settings = session ? await getPublicSettings(req) : { businessName: config.businessName, currency: config.currency, driveRootFolderName: config.driveRootFolderName }
   res.json({
     authenticated: Boolean(session),
     csrfToken: session?.csrfToken || '',
@@ -110,25 +106,22 @@ app.post('/api/login', loginLimiter, async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid username or password.' })
     }
 
-    const session = newSession()
-    session.user = publicUser(user)
-    await store.saveSession(session)
-    setSessionCookie(res, session.id)
+    const session = newSession(publicUser(user))
+    setSessionCookie(res, session)
     res.json({ authenticated: true, csrfToken: session.csrfToken, username: user.email || user.username })
   } catch (error) {
     next(error)
   }
 })
 
-app.post('/api/logout', requireAuth(store), requireCsrf, async (req, res) => {
-  await store.deleteSession(req.session.hash)
+app.post('/api/logout', requireAuth(), requireCsrf, async (_req, res) => {
   clearSessionCookie(res)
   res.json({ ok: true })
 })
 
-app.get('/api/google/auth-url', requireAuth(store), async (req, res, next) => {
+app.get('/api/google/auth-url', requireAuth(), async (req, res, next) => {
   try {
-    res.json({ url: await createGoogleAuthUrl(store, req.session.hash) })
+    res.json({ url: await createGoogleAuthUrl(req, res, req.session) })
   } catch (error) {
     next(error)
   }
@@ -136,15 +129,16 @@ app.get('/api/google/auth-url', requireAuth(store), async (req, res, next) => {
 
 app.get('/api/google/callback', async (req, res) => {
   try {
-    const session = await authenticatedSession(req, store)
+    const session = await authenticatedSession(req)
     if (!session) throw new Error('Sign in again before connecting Google Drive.')
     await handleGoogleCallback(
-      store,
+      req,
+      res,
       {
         code: String(req.query.code || ''),
         state: String(req.query.state || ''),
       },
-      session.hash,
+      session,
     )
     res.redirect('/?drive=connected')
   } catch (error) {
@@ -152,22 +146,30 @@ app.get('/api/google/callback', async (req, res) => {
   }
 })
 
-app.get('/api/products', requireAuth(store), async (_req, res) => {
-  res.json({ products: await store.listProducts() })
+app.get('/api/products', requireAuth(), async (req, res, next) => {
+  try {
+    const drive = await googleDriveStatus(req)
+    if (!drive.connected) return res.json({ products: [] })
+    const indexedProducts = await readCatalogueProducts(req, res)
+    const result = await reconcileProductsWithDrive(req, res, indexedProducts)
+    if (result.removed.length) await syncCatalogueFiles(req, res, result.products)
+    res.json({ products: result.products })
+  } catch (error) {
+    next(error)
+  }
 })
 
-app.post('/api/products/sync', requireAuth(store), requireCsrf, async (_req, res, next) => {
+app.post('/api/products/sync', requireAuth(), requireCsrf, async (req, res, next) => {
   try {
-    const drive = await googleDriveStatus(store)
+    const drive = await googleDriveStatus(req)
     if (!drive.connected) return res.status(409).json({ error: 'Connect Google Drive before syncing catalogue.' })
 
-    const before = await store.listProducts()
-    const result = await reconcileProductsWithDrive(store, before)
-    await store.replaceProducts(result.products)
-    await syncCatalogueFiles(store, result.products)
+    const before = await readCatalogueProducts(req, res)
+    const result = await reconcileProductsWithDrive(req, res, before)
+    await syncCatalogueFiles(req, res, result.products)
 
     res.json({
-      products: await store.listProducts(),
+      products: result.products,
       removed: result.removed.map((product) => ({ id: product.id, sku: product.sku })),
     })
   } catch (error) {
@@ -175,13 +177,13 @@ app.post('/api/products/sync', requireAuth(store), requireCsrf, async (_req, res
   }
 })
 
-app.get('/api/drive/files/:fileId/content', requireAuth(store), async (req, res, next) => {
+app.get('/api/drive/files/:fileId/content', requireAuth(), async (req, res, next) => {
   try {
     const fileId = String(req.params.fileId || '')
-    const products = await store.listProducts()
+    const products = await readCatalogueProducts(req, res)
     const allowed = products.some((product) => [...(product.media || []), product.masterCard].filter(Boolean).some((item) => item.driveFileId === fileId))
     if (!allowed) return res.status(404).json({ error: 'File not found.' })
-    const file = await downloadDriveFile(store, fileId)
+    const file = await downloadDriveFile(req, res, fileId)
     res.setHeader('Content-Type', file.mimeType)
     res.setHeader('Cache-Control', 'private, max-age=300')
     if (file.size) res.setHeader('Content-Length', String(file.size))
@@ -191,20 +193,20 @@ app.get('/api/drive/files/:fileId/content', requireAuth(store), async (req, res,
   }
 })
 
-app.get('/api/settings', requireAuth(store), async (_req, res) => {
-  res.json({ settings: await getPublicSettings(store), drive: await googleDriveStatus(store) })
+app.get('/api/settings', requireAuth(), async (req, res) => {
+  res.json({ settings: await getPublicSettings(req), drive: await googleDriveStatus(req) })
 })
 
-app.put('/api/settings', requireAuth(store), requireCsrf, async (req, res, next) => {
+app.put('/api/settings', requireAuth(), requireCsrf, async (req, res, next) => {
   try {
-    const settings = await savePublicSettings(store, req.body || {})
-    res.json({ settings, drive: await googleDriveStatus(store) })
+    const settings = await savePublicSettings(req, res, req.body || {})
+    res.json({ settings, drive: await googleDriveStatus(req) })
   } catch (error) {
     next(error)
   }
 })
 
-app.post('/api/account/password', requireAuth(store), requireCsrf, async (req, res, next) => {
+app.post('/api/account/password', requireAuth(), requireCsrf, async (req, res, next) => {
   try {
     if (!firebaseAuthConfigured()) return res.status(409).json({ error: 'Password changes are available for Firebase login only.' })
     const email = req.session.user?.email
@@ -226,7 +228,7 @@ app.post('/api/account/password', requireAuth(store), requireCsrf, async (req, r
   }
 })
 
-app.post('/api/certificate/parse', requireAuth(store), requireCsrf, upload.single('certificate'), async (req, res, next) => {
+app.post('/api/certificate/parse', requireAuth(), requireCsrf, upload.single('certificate'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Add a certificate file first.' })
     const certificate = await validateUploadedFile(req.file)
@@ -242,9 +244,9 @@ app.post('/api/certificate/parse', requireAuth(store), requireCsrf, upload.singl
   }
 })
 
-app.post('/api/products', requireAuth(store), requireCsrf, upload.fields(uploadFields), async (req, res, next) => {
+app.post('/api/products', requireAuth(), requireCsrf, upload.fields(uploadFields), async (req, res, next) => {
   try {
-    const drive = await googleDriveStatus(store)
+    const drive = await googleDriveStatus(req)
     if (!drive.connected) return res.status(409).json({ error: 'Connect Google Drive before uploading product media.' })
 
     const fields = normalizeProductFields(req.body || {})
@@ -277,7 +279,9 @@ app.post('/api/products', requireAuth(store), requireCsrf, upload.fields(uploadF
       status: 'uploading',
       ...fields,
     }
-    const driveResult = await uploadProductToDrive(store, productBase, files)
+    const indexedProducts = await readCatalogueProducts(req, res)
+    const { products: existingProducts } = await reconcileProductsWithDrive(req, res, indexedProducts)
+    const driveResult = await uploadProductToDrive(req, res, productBase, files)
     const product = {
       ...productBase,
       status: 'saved',
@@ -287,26 +291,31 @@ app.post('/api/products', requireAuth(store), requireCsrf, upload.fields(uploadF
       masterCard: driveResult.masterCard,
     }
 
-    await store.saveProduct(product)
-    await syncCatalogueFiles(store, await store.listProducts())
+    const products = [product, ...existingProducts.filter((item) => item.id !== product.id && item.sku !== product.sku)]
+    await syncCatalogueFiles(req, res, products)
     res.status(201).json({ product })
   } catch (error) {
     next(error)
   }
 })
 
-app.get('/api/products/:id/share/:packageName', requireAuth(store), async (req, res) => {
-  const product = await store.getProduct(req.params.id)
-  if (!product) return res.status(404).json({ error: 'Product not found.' })
-  const packageName = req.params.packageName
-  const media = filesForPackage(product, packageName)
-  const links = media.map((item) => item.driveWebViewLink || item.driveWebContentLink).filter(Boolean)
-  const message = await productShareMessage(store, product, packageName, links)
-  res.json({
-    message,
-    links,
-    whatsappUrl: `https://wa.me/?text=${encodeURIComponent(message)}`,
-  })
+app.get('/api/products/:id/share/:packageName', requireAuth(), async (req, res, next) => {
+  try {
+    const products = await readCatalogueProducts(req, res)
+    const product = products.find((item) => item.id === req.params.id)
+    if (!product) return res.status(404).json({ error: 'Product not found.' })
+    const packageName = req.params.packageName
+    const media = filesForPackage(product, packageName)
+    const links = media.map((item) => item.driveWebViewLink || item.driveWebContentLink).filter(Boolean)
+    const message = await productShareMessage(req, product, packageName, links)
+    res.json({
+      message,
+      links,
+      whatsappUrl: `https://wa.me/?text=${encodeURIComponent(message)}`,
+    })
+  } catch (error) {
+    next(error)
+  }
 })
 
 app.get('/healthz', (_req, res) => {
@@ -382,7 +391,7 @@ function filesForPackage(product, packageName) {
   return [...product.media.filter((item) => item.kind === 'photo' || item.kind === 'video' || item.kind === 'certificate'), ...master]
 }
 
-async function productShareMessage(store, product, packageName, links) {
+async function productShareMessage(req, product, packageName, links) {
   const packageLabel =
     packageName === 'main'
       ? 'Main video + master card'
@@ -390,7 +399,7 @@ async function productShareMessage(store, product, packageName, links) {
         ? 'All pictures/videos + master card'
         : 'All pictures/videos + master card + certificate'
   return [
-    await resolvedBusinessName(store),
+    await resolvedBusinessName(req),
     `${product.sku} - ${product.gemstone}`,
     product.weightCt ? `Weight: ${product.weightCt} ct` : '',
     product.origin ? `Origin: ${product.origin}` : '',

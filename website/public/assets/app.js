@@ -120,11 +120,6 @@ const els = {
     currency: document.querySelector('#setting-currency'),
     driveRootFolderName: document.querySelector('#setting-drive-root'),
     shareDriveLinksPublic: document.querySelector('#setting-share-links'),
-    googleClientId: document.querySelector('#setting-google-client-id'),
-    googleClientSecret: document.querySelector('#setting-google-client-secret'),
-    googleRedirectUri: document.querySelector('#setting-google-redirect-uri'),
-    secretStatus: document.querySelector('#secret-status'),
-    message: document.querySelector('#settings-message'),
     currentPassword: document.querySelector('#setting-current-password'),
     newPassword: document.querySelector('#setting-new-password'),
     confirmPassword: document.querySelector('#setting-confirm-password'),
@@ -214,10 +209,6 @@ function bindEvents() {
   })
   document.querySelector('#share-selected').addEventListener('click', shareSelectedProducts)
   document.querySelector('#save-settings').addEventListener('click', saveSettings)
-  document.querySelector('#settings-connect-drive').addEventListener('click', saveAndConnectDrive)
-  document.querySelector('#settings-sync-products').addEventListener('click', async () => {
-    await syncProducts(true)
-  })
   document.querySelector('#change-password').addEventListener('click', changePassword)
 }
 
@@ -271,7 +262,7 @@ async function connectDrive() {
     const result = await api('/api/google/auth-url')
     window.location.href = result.url
   } catch (error) {
-    showMessage(`${error.message} Open Settings and add your Google Web OAuth Client ID and Client Secret.`, 'error')
+    showMessage(`${error.message} Check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.`, 'error')
     setScreen('settings')
   }
 }
@@ -297,9 +288,12 @@ async function loadProducts() {
   renderProducts()
 }
 
-async function syncProducts(fromSettings = false) {
-  const setStatus = fromSettings ? setSettingsMessage : showMessage
-  setStatus('Checking Google Drive...')
+async function syncProducts() {
+  if (!driveState.connected) {
+    showMessage('Please connect Google Drive first.', 'error')
+    return
+  }
+  showMessage('Checking Google Drive...')
   try {
     const result = await api('/api/products/sync', { method: 'POST' })
     products = Array.isArray(result.products) ? result.products : []
@@ -307,10 +301,9 @@ async function syncProducts(fromSettings = false) {
     renderProducts()
     const removedCount = Array.isArray(result.removed) ? result.removed.length : 0
     const message = removedCount ? `Catalogue synced. Removed ${removedCount} product${removedCount === 1 ? '' : 's'} missing from Drive.` : 'Catalogue synced.'
-    setStatus(message)
-    if (fromSettings) showMessage(message)
+    showMessage(message)
   } catch (error) {
-    setStatus(error.message, 'error')
+    showMessage(error.message, 'error')
   }
 }
 
@@ -354,10 +347,6 @@ function renderSettings() {
   els.settings.currency.value = appConfig.currency || 'INR'
   els.settings.driveRootFolderName.value = appConfig.driveRootFolderName || 'JMJ Digital Catalogue'
   els.settings.shareDriveLinksPublic.checked = Boolean(appConfig.shareDriveLinksPublic)
-  els.settings.googleClientId.value = appConfig.googleClientId || ''
-  els.settings.googleClientSecret.value = ''
-  els.settings.googleRedirectUri.value = appConfig.googleRedirectUri || 'http://localhost:8787/api/google/callback'
-  els.settings.secretStatus.textContent = appConfig.googleClientSecretSet ? 'Client secret is saved on this server. Leave blank to keep it.' : 'Client secret is not saved yet.'
   els.settings.currentPassword.value = ''
   els.settings.newPassword.value = ''
   els.settings.confirmPassword.value = ''
@@ -371,9 +360,6 @@ function readSettingsDraft() {
     currency: els.settings.currency.value.toUpperCase(),
     driveRootFolderName: els.settings.driveRootFolderName.value,
     shareDriveLinksPublic: els.settings.shareDriveLinksPublic.checked,
-    googleClientId: els.settings.googleClientId.value,
-    googleClientSecret: els.settings.googleClientSecret.value,
-    googleRedirectUri: els.settings.googleRedirectUri.value,
   }
 }
 
@@ -396,12 +382,6 @@ async function saveSettings() {
     setSettingsMessage(error.message, 'error')
     return false
   }
-}
-
-async function saveAndConnectDrive() {
-  const saved = await saveSettings()
-  if (!saved) return
-  await connectDrive()
 }
 
 async function changePassword() {

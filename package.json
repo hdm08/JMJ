@@ -13,12 +13,10 @@
     "website:start": "NODE_ENV=production node server/index.js",
     "website:hash-admin": "node server/hash-password.js",
     "hash-admin": "node server/hash-password.js",
-    "migrate:firestore": "node server/migrate-json-to-firestore.js",
-    "check": "node --check server/config.js && node --check server/index.js && node --check server/drive.js && node --check server/certificate-parser.js && node --check server/migrate-json-to-firestore.js",
+    "check": "node --check server/config.js && node --check server/index.js && node --check server/drive.js && node --check server/certificate-parser.js && node --check server/cookie-state.js && node --check server/settings.js && node --check server/security.js",
     "lint": "npm run check"
   },
   "dependencies": {
-    "@google-cloud/firestore": "^9.0.0",
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
     "express-rate-limit": "^8.6.2",

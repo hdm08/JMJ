@@ -1,40 +1,25 @@
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 import { config } from './config.js'
+import { readCookieJson, writeCookieJson, clearStateCookie } from './cookie-state.js'
 
 const SESSION_COOKIE = 'jmj_session'
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000
 
-export function newSession() {
-  const id = randomBytes(32).toString('base64url')
-  return {
-    id,
-    hash: hashSessionId(id),
+export function newSession(user = {}) {
+  return signSession({
+    user,
     csrfToken: randomBytes(32).toString('base64url'),
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
-  }
-}
-
-export function hashSessionId(sessionId) {
-  return createHmac('sha256', sessionSecret()).update(sessionId).digest('base64url')
-}
-
-export function setSessionCookie(res, sessionId) {
-  res.cookie(SESSION_COOKIE, sessionId, {
-    httpOnly: true,
-    secure: config.nodeEnv === 'production',
-    sameSite: 'lax',
-    maxAge: SESSION_TTL_MS,
-    path: '/',
   })
 }
 
-export function clearSessionCookie(res) {
-  res.clearCookie(SESSION_COOKIE, { path: '/' })
+export function setSessionCookie(res, session) {
+  writeCookieJson(res, SESSION_COOKIE, session, SESSION_TTL_MS)
 }
 
-export function getSessionId(req) {
-  return req.cookies?.[SESSION_COOKIE] || ''
+export function clearSessionCookie(res) {
+  clearStateCookie(res, SESSION_COOKIE)
 }
 
 export function verifyPassword(password, storedHash) {
@@ -46,9 +31,9 @@ export function verifyPassword(password, storedHash) {
   return expected.length === actual.length && timingSafeEqual(expected, actual)
 }
 
-export function requireAuth(store) {
+export function requireAuth() {
   return async (req, res, next) => {
-    const session = await authenticatedSession(req, store)
+    const session = await authenticatedSession(req)
     if (!session) return res.status(401).json({ error: 'Authentication required.' })
     req.session = session
     next()
@@ -63,16 +48,40 @@ export function requireCsrf(req, res, next) {
   next()
 }
 
-export async function authenticatedSession(req, store) {
-  const sessionId = getSessionId(req)
-  if (!sessionId) return null
-  const session = await store.getSession(hashSessionId(sessionId))
-  if (!session) return null
-  if (Date.parse(session.expiresAt) < Date.now()) {
-    await store.deleteSession(session.hash)
-    return null
-  }
+export async function authenticatedSession(req) {
+  const session = req.session || readCookieJson(req, SESSION_COOKIE)
+  if (!session?.csrfToken || !session?.expiresAt) return null
+  if (!verifySessionSignature(session)) return null
+  if (Date.parse(session.expiresAt) < Date.now()) return null
   return session
+}
+
+function signSession(session) {
+  return {
+    ...session,
+    signature: sessionSignature(session),
+  }
+}
+
+function verifySessionSignature(session) {
+  const signature = String(session.signature || '')
+  if (!signature) return false
+  const expected = Buffer.from(sessionSignature(session), 'base64url')
+  const actual = Buffer.from(signature, 'base64url')
+  return expected.length === actual.length && timingSafeEqual(expected, actual)
+}
+
+function sessionSignature(session) {
+  return createHmac('sha256', sessionSecret()).update(sessionPayload(session)).digest('base64url')
+}
+
+function sessionPayload(session) {
+  return JSON.stringify({
+    user: session.user || {},
+    csrfToken: String(session.csrfToken || ''),
+    createdAt: String(session.createdAt || ''),
+    expiresAt: String(session.expiresAt || ''),
+  })
 }
 
 function sessionSecret() {
